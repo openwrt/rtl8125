@@ -5,7 +5,7 @@
 # r8125 is the Linux device driver released for Realtek 2.5 Gigabit Ethernet
 # controllers with PCI-Express interface.
 #
-# Copyright(c) 2025 Realtek Semiconductor Corp. All rights reserved.
+# Copyright(c) 2026 Realtek Semiconductor Corp. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the Free
@@ -214,13 +214,10 @@ static int _rtl8125_phy_phc_adjtime(struct rtl8125_private *tp, s64 delta)
 static int rtl8125_phy_phc_adjtime(struct ptp_clock_info *ptp, s64 delta)
 {
         struct rtl8125_private *tp = container_of(ptp, struct rtl8125_private, ptp_clock_info);
-        int ret;
 
         //netif_info(tp, drv, tp->dev, "phc adjust time\n");
 
-        ret = _rtl8125_phy_phc_adjtime(tp, delta);
-
-        return ret;
+        return _rtl8125_phy_phc_adjtime(tp, delta);
 }
 
 /*
@@ -238,7 +235,7 @@ static int _rtl8125_phy_phc_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
         u32 rate_value;
 
         if (ppb < 0) {
-                rate_value = ((u64)-ppb << 32) / 1000000000;
+                rate_value = ((u64)(-(s64)ppb) << 32) / 1000000000;
                 rate_value = ~rate_value + 1;
         } else
                 rate_value = ((u64)ppb << 32) / 1000000000;
@@ -367,8 +364,10 @@ static int rtl8125_phy_phc_enable(struct ptp_clock_info *ptp,
 
                         /* start hrtimer */
                         hrtimer_start(&tp->pps_timer, ktime_set(0, R8125_PPS_TIMER_INTERVAL), HRTIMER_MODE_REL);
-                } else
+                } else {
                         tp->pps_enable = 0;
+                        hrtimer_cancel(&tp->pps_timer);
+                }
                 rtnl_unlock();
                 return 0;
         default:
@@ -594,7 +593,7 @@ static void rtl8125_phy_ptp_tx_hwtstamp(struct rtl8125_private *tp)
         struct skb_shared_hwtstamps shhwtstamps = { 0 };
         struct timespec64 ts64;
 
-        rtl8125_mdio_direct_write_phy_ocp(tp, PTP_INSR, TX_TX_INTR);
+        rtl8125_mdio_direct_write_phy_ocp(tp, PTP_INSR, TX_TS_INTR);
 
         rtl8125_phy_ptp_egresstime(tp, &ts64);
 
@@ -636,13 +635,13 @@ static void rtl8125_phy_ptp_tx_work(struct work_struct *work)
                  * interrupt
                  */
                 r8125_spin_lock(&tp->phy_lock, flags);
-                rtl8125_mdio_direct_write_phy_ocp(tp, PTP_INSR, TX_TX_INTR);
+                rtl8125_mdio_direct_write_phy_ocp(tp, PTP_INSR, TX_TS_INTR);
                 r8125_spin_unlock(&tp->phy_lock, flags);
                 return;
         }
 
         r8125_spin_lock(&tp->phy_lock, flags);
-        if (rtl8125_mdio_direct_read_phy_ocp(tp, PTP_INSR) & TX_TX_INTR) {
+        if (rtl8125_mdio_direct_read_phy_ocp(tp, PTP_INSR) & TX_TS_INTR) {
                 tx_intr = true;
                 rtl8125_phy_ptp_tx_hwtstamp(tp);
         } else {
@@ -663,8 +662,8 @@ static int rtl8125_phy_hwtstamp_enable(struct rtl8125_private *tp, bool enable)
         r8125_spin_lock(&tp->phy_lock, flags);
 
         if (enable) {
-                //trx timestamp interrupt enable
-                rtl8125_set_eth_phy_ocp_bit(tp, PTP_INER, BIT_2 | BIT_3);
+                //tx timestamp interrupt enable
+                rtl8125_set_eth_phy_ocp_bit(tp, PTP_INER, BIT_3);
 
                 //set isr clear mode
                 rtl8125_set_eth_phy_ocp_bit(tp, PTP_GEN_CFG, BIT_0);
@@ -761,7 +760,7 @@ static enum hrtimer_restart rtl8125_phy_hrtimer_for_pps(struct hrtimer *timer)
 {
         struct rtl8125_private *tp = container_of(timer, struct rtl8125_private, pps_timer);
         s64 pps_sec;
-        u16 tai_cfg;
+        u16 tai_cfg = 0;
         int i;
 
         if (tp->pps_enable) {
