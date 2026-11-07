@@ -132,7 +132,6 @@ enum PTP_TRX_TS_STA_REG {
 #define RTL_FLAG_RX_HWTSTAMP_ENABLED BIT_0
 
 struct rtl8125_private;
-struct RxDescV3;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)
 int rtl8125_get_ts_info(struct net_device *netdev,
@@ -148,9 +147,6 @@ void rtl8125_ptp_suspend(struct rtl8125_private *tp);
 void rtl8125_ptp_stop(struct rtl8125_private *tp);
 
 int rtl8125_ptp_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd);
-
-void rtl8125_rx_mac_ptp_pktstamp(struct rtl8125_private *tp, struct sk_buff *skb,
-                                 struct RxDescV3 *descv3);
 
 void rtl8125_set_phy_local_time(struct rtl8125_private *tp);
 
